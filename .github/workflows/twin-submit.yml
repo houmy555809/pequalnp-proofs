@@ -1,0 +1,52 @@
+name: twin-submit
+on:
+  workflow_dispatch:
+    inputs:
+      gap:
+        description: 'gap id'
+        required: true
+      handle:
+        description: 'desk claim handle'
+        required: true
+        default: 'houmy555809'
+jobs:
+  submit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: claim publish submit
+        env:
+          TWIN_TOKEN: ${{ secrets.TWIN_TOKEN }}
+          GAP: ${{ inputs.gap }}
+          HANDLE: ${{ inputs.handle }}
+        run: |
+          python3 - <<'PY'
+          import json,os,urllib.request,urllib.error,base64,secrets
+          GAP=os.environ['GAP']; HANDLE=os.environ['HANDLE']; TOKEN=os.environ['TWIN_TOKEN']
+          SITE='https://www.movan.tech/goldbach'; PROBLEM='twin-primes'
+          SUF='' if PROBLEM=='goldbach' else '/problems/'+PROBLEM
+          def post(url,data,headers):
+              r=urllib.request.Request(url,data=json.dumps(data).encode(),headers=headers)
+              return json.loads(urllib.request.urlopen(r,timeout=60).read())
+          def gh(path,data=None,method=None):
+              url='https://api.github.com'+path
+              body=json.dumps(data).encode() if data is not None else None
+              r=urllib.request.Request(url,data=body,method=method,headers={"Authorization":"token "+TOKEN,"Accept":"application/vnd.github+json","Content-Type":"application/json"})
+              return json.loads(urllib.request.urlopen(r,timeout=60).read())
+          try:
+              resp=post(SITE+SUF+'/api/desk/claim',{"handle":HANDLE,"gap":GAP},{"Content-Type":"application/json"})
+          except urllib.error.HTTPError as e:
+              print('CLAIM-FAIL',e.code,e.read()[:300]); raise SystemExit(1)
+          gap=resp['gap']; token=resp['lease']['token']
+          proof=urllib.request.urlopen(f"https://raw.githubusercontent.com/houmy555809/pequalnp-proofs/twin-proofs/proofs/{GAP}.lean",timeout=60).read()
+          REPO='CGandGameEngineLearner/goldbach-proofs'; FORK='houmy555809/pequalnp-proofs'
+          main=gh(f'/repos/{REPO}/git/ref/heads/main')['object']['sha']
+          basetree=gh(f'/repos/{REPO}/git/commits/{main}')['tree']['sha']
+          blob=gh(f'/repos/{FORK}/git/blobs',{"content":base64.b64encode(proof).decode(),"encoding":"base64"})
+          tree=gh(f'/repos/{FORK}/git/trees',{"base_tree":basetree,"tree":[{"path":gap['file'],"mode":"100644","type":"blob","sha":blob['sha']}]})
+          commit=gh(f'/repos/{FORK}/git/commits',{"message":f"Prove {GAP}","tree":tree['sha'],"parents":[main]})
+          head=commit['sha']; branch='goldbach/'+GAP+'/'+secrets.token_hex(4)
+          gh(f'/repos/{FORK}/git/refs',{"ref":"refs/heads/"+branch,"sha":head})
+          pr=gh(f'/repos/{REPO}/pulls',{"title":f"Prove {GAP}","head":"houmy555809:"+branch,"base":"main","body":f"Lean proof for {GAP}."})
+          sub=post(SITE+SUF+'/api/desk/submit',{"pr":pr['number'],"head":head,"agent":{"model":"deepseek-flash","harness":"other","harness_version":"deepseek-harness"}},{"Content-Type":"application/json","Authorization":"Bearer "+token})
+          print('SUBMITTED',GAP,'PR',pr['number'],str(sub)[:200])
+          PY
