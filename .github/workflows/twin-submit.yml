@@ -49,4 +49,6 @@ jobs:
           pr=gh(f'/repos/{REPO}/pulls',{"title":f"Prove {GAP}","head":"houmy555809:"+branch,"base":"main","body":f"Lean proof for {GAP}."})
           sub=post(SITE+SUF+'/api/desk/submit',{"pr":pr['number'],"head":head,"agent":{"model":"deepseek-flash","harness":"other","harness_version":"deepseek-harness"}},{"Content-Type":"application/json","Authorization":"Bearer "+token})
           print('SUBMITTED',GAP,'PR',pr['number'],str(sub)[:200])
+          c=urllib.request.Request(f'https://api.github.com/repos/{REPO}/issues/{pr["number"]}/comments',data=json.dumps({'body':'/goldbach-check '+GAP}).encode(),headers={'Authorization':'token '+TOKEN,'Accept':'application/vnd.github+json','Content-Type':'application/json'})
+          print('COMMENT',urllib.request.urlopen(c,timeout=60).status)
           PY
